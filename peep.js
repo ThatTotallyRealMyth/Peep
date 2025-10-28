@@ -1,17 +1,15 @@
-var writeFile = Module.getExportByName(null, "WriteFile");
-var readFile = Module.getExportByName(null, "ReadFile");
+// Change 1: Replace all Module.getExportByName with Process.getModuleByName("kernel32.dll").getExportByName
+var writeFile = Process.getModuleByName("kernel32.dll").getExportByName("WriteFile");
+var readFile = Process.getModuleByName("kernel32.dll").getExportByName("ReadFile");
+var createFileA = Process.getModuleByName("kernel32.dll").getExportByName("CreateFileA");
+var createFileW = Process.getModuleByName("kernel32.dll").getExportByName("CreateFileW");
+var createNamedPipeA = Process.getModuleByName("kernel32.dll").getExportByName("CreateNamedPipeA");
+var createNamedPipeW = Process.getModuleByName("kernel32.dll").getExportByName("CreateNamedPipeW");
+var callNamedPipe = Process.getModuleByName("kernel32.dll").getExportByName("CallNamedPipeA");
+var createPipe = Process.getModuleByName("kernel32.dll").getExportByName("CreatePipe");
 
-var createFileA = Module.getExportByName(null, "CreateFileA");
-var createFileW = Module.getExportByName(null, "CreateFileW");
-
-var createNamedPipeA = Module.getExportByName(null, "CreateNamedPipeA");
-var createNamedPipeW = Module.getExportByName(null, "CreateNamedPipeW");
-
-var callNamedPipe = Module.getExportByName(null, "CallNamedPipeA");
-
-var createPipe = Module.getExportByName(null, "CreatePipe");
-
-var getFileTypeAddr = Module.findExportByName(null, 'GetFileType');
+// Change 2: Replace Module.findExportByName with Process.getModuleByName("kernel32.dll").getExportByName
+var getFileTypeAddr = Process.getModuleByName("kernel32.dll").getExportByName('GetFileType');
 var getFileType = new NativeFunction(getFileTypeAddr, 'uint32',['pointer']);
 
 var isPipe = 0;
@@ -22,19 +20,14 @@ var filename;
 var readbuff = 0x0;
 var outLenght;
 
+// Change 3: Replace Memory.readCString(ptr) with ptr.readCString()
+// Cange 4: Replace Memory.readUtf16String(ptr) with ptr.readUtf16String()
+// Change 5: Replace Memory.readInt(ptr) with ptr.readInt()
+
 Interceptor.attach(writeFile, {
     onEnter: function(args)
     {
-        /*
-        BOOL WriteFile(
-        [in]                HANDLE       hFile,
-        [in]                LPCVOID      lpBuffer,
-        [in]                DWORD        nNumberOfBytesToWrite,
-        [out, optional]     LPDWORD      lpNumberOfBytesWritten,
-        [in, out, optional] LPOVERLAPPED lpOverlapped
-        );
-        */
-	    var len = args[2].toInt32(); // get nNumberOfBytesToWrite
+        var len = args[2].toInt32();
         if (args[0] in pipeHandlers)
         {
             console.log("\nThread: "+Process.getCurrentThreadId())
@@ -65,16 +58,7 @@ Interceptor.attach(writeFile, {
 Interceptor.attach(readFile, {
     onEnter: function(args)
     {
-        /*
-        BOOL ReadFile(
-        [in]                HANDLE       hFile,
-        [out]               LPVOID       lpBuffer,
-        [in]                DWORD        nNumberOfBytesToRead,
-        [out, optional]     LPDWORD      lpNumberOfBytesRead,
-        [in, out, optional] LPOVERLAPPED lpOverlapped
-        );
-        */
-	    outLenght = args[3];
+        outLenght = args[3];
         if (args[0] in pipeHandlers)
         {
             console.log("\nThread: "+Process.getCurrentThreadId())
@@ -105,7 +89,7 @@ Interceptor.attach(readFile, {
     {
         if (!(readbuff == 0x0))
         {
-	        var len = Memory.readInt(outLenght);
+            var len = outLenght.readInt(); // CHANGED: Memory.readInt() -> ptr.readInt()
             console.log("< Content:\n" + hexdump(readbuff, {length: len}) + "\n");
             readbuff = 0x0;
         }
@@ -115,21 +99,10 @@ Interceptor.attach(readFile, {
 Interceptor.attach(createFileA, {
     onEnter: function(args)
     {
-        /*
-        HANDLE CreateFileA(
-        [in]           LPCSTR                lpFileName,
-        [in]           DWORD                 dwDesiredAccess,
-        [in]           DWORD                 dwShareMode,
-        [in, optional] LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-        [in]           DWORD                 dwCreationDisposition,
-        [in]           DWORD                 dwFlagsAndAttributes,
-        [in, optional] HANDLE                hTemplateFile
-        );
-        */
-        if (Memory.readCString(args[0]).includes("\\\\.\\pipe"))
+        if (args[0].readCString().includes("\\\\.\\pipe")) // altered Memory.readCString() with ptr.readCString()
         {
             isPipe = 1;
-            pipename = Memory.readCString(args[0]);
+            pipename = args[0].readCString(); // again altered Memory.readCString() with ptr.readCString()
         }
         else
         {
@@ -140,10 +113,8 @@ Interceptor.attach(createFileA, {
     {
         if (isPipe == 1)
         {
-            //console.log("\nHandler: "+retval);
             if (!(retval in pipeHandlers))
             {
-                //console.log(retval)
                 pipeHandlers[retval] = pipename;
             }
             isPipe = 0;
@@ -161,21 +132,10 @@ Interceptor.attach(createFileA, {
 Interceptor.attach(createFileW, {
     onEnter: function(args)
     {
-        /*
-        HANDLE CreateFileW(
-        [in]           LPCWSTR               lpFileName,
-        [in]           DWORD                 dwDesiredAccess,
-        [in]           DWORD                 dwShareMode,
-        [in, optional] LPSECURITY_ATTRIBUTES lpSecurityAttributes,
-        [in]           DWORD                 dwCreationDisposition,
-        [in]           DWORD                 dwFlagsAndAttributes,
-        [in, optional] HANDLE                hTemplateFile
-        );
-        */
-        if (Memory.readUtf16String(args[0]).includes("\\\\.\\pipe"))
+        if (args[0].readUtf16String().includes("\\\\.\\pipe")) // replaced Memory.readUtf16String() with ptr.readUtf16String()
         {
             isPipe = 1;
-            pipename = Memory.readUtf16String(args[0]);
+            pipename = args[0].readUtf16String(); //same replacement as noted above
         }
         else
         {
@@ -187,10 +147,8 @@ Interceptor.attach(createFileW, {
     {
         if (isPipe == 1)
         {
-            //console.log("\nHandler: "+retval);
             if (!(retval in pipeHandlers))
             {
-                //console.log(retval)
                 pipeHandlers[retval] = pipename;
             }
             isPipe = 0;
@@ -208,20 +166,7 @@ Interceptor.attach(createFileW, {
 Interceptor.attach(createNamedPipeA, {
     onEnter: function(args)
     {
-        /*
-        HANDLE CreateNamedPipeA(
-        [in]           LPCSTR                lpName,
-        [in]           DWORD                 dwOpenMode,
-        [in]           DWORD                 dwPipeMode,
-        [in]           DWORD                 nMaxInstances,
-        [in]           DWORD                 nOutBufferSize,
-        [in]           DWORD                 nInBufferSize,
-        [in]           DWORD                 nDefaultTimeOut,
-        [in, optional] LPSECURITY_ATTRIBUTES lpSecurityAttributes
-        );
-        Returns file handler
-        */
-        console.log("\nPipename: "+Memory.readCString(args[0]));
+        console.log("\nPipename: "+args[0].readCString()); // replaced Memory.readCString() -> ptr.readCString()
         
         console.log("Open Mode: "+args[1]);
         if (args[1] == 0x3)
@@ -264,11 +209,10 @@ Interceptor.attach(createNamedPipeA, {
         {
             console.log("Pipe accepts remote clients");
         }
-        pipename = Memory.readCString(args[0]);
+        pipename = args[0].readCString(); 
     },
     onLeave: function (retval) 
     {
-        //console.log("Handler: "+retval);
         pipeHandlers[retval] = pipename;
     }
 });
@@ -276,20 +220,7 @@ Interceptor.attach(createNamedPipeA, {
 Interceptor.attach(createNamedPipeW, {
     onEnter: function(args)
     {
-        /*
-        HANDLE CreateNamedPipeW(
-        [in]           LPCWSTR               lpName,
-        [in]           DWORD                 dwOpenMode,
-        [in]           DWORD                 dwPipeMode,
-        [in]           DWORD                 nMaxInstances,
-        [in]           DWORD                 nOutBufferSize,
-        [in]           DWORD                 nInBufferSize,
-        [in]           DWORD                 nDefaultTimeOut,
-        [in, optional] LPSECURITY_ATTRIBUTES lpSecurityAttributes
-        );
-        Returns file handler
-        */
-        console.log("\nPipename: "+Memory.readUtf16String(args[0]));
+        console.log("\nPipename: "+args[0].readUtf16String()); 
         console.log("Mode: "+args[1]);
         if (args[1] == 0x3)
         {
@@ -332,11 +263,10 @@ Interceptor.attach(createNamedPipeW, {
         {
             console.log("Pipe accepts remote clients");
         }
-        pipename = Memory.readUtf16String(args[0]);
+        pipename = args[0].readUtf16String(); 
     },
     onLeave: function (retval) 
     {
-        //console.log("\nHandler: "+retval);
         pipeHandlers[retval] = pipename;
     }
 });
@@ -344,37 +274,14 @@ Interceptor.attach(createNamedPipeW, {
 Interceptor.attach(callNamedPipe, {
     onEnter: function(args)
     {
-        /*
-        BOOL CallNamedPipeA(
-        [in]  LPCSTR  lpNamedPipeName,
-        [in]  LPVOID  lpInBuffer,
-        [in]  DWORD   nInBufferSize,
-        [out] LPVOID  lpOutBuffer,
-        [in]  DWORD   nOutBufferSize,
-        [out] LPDWORD lpBytesRead,
-        [in]  DWORD   nTimeOut
-        );
-        */
-
-        console.log("\nTransactional Pipename: "+Memory.readCString(args[0]));
-        // console.log("Input:\n"+hexdump(args[1],{offset: 0, length: args[2]});
+        console.log("\nTransactional Pipename: "+args[0].readCString()); 
     }   
 });
-
 
 Interceptor.attach(createPipe, {
     onEnter: function(args)
     {
-        /*
-        BOOL CreatePipe(
-        [out]          PHANDLE               hReadPipe,
-        [out]          PHANDLE               hWritePipe,
-        [in, optional] LPSECURITY_ATTRIBUTES lpPipeAttributes,
-        [in]           DWORD                 nSize
-        );
-        */
         console.log("\nAnonymous Pipe Created\nRead Handler: "+args[0]+"\nWrite Handler: "+args[1]);
         pipeHandlers[args[0]] = "Anonymous";
     }   
 });
-
